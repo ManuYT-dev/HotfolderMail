@@ -1,0 +1,7 @@
+services:
+  automatisierung:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
