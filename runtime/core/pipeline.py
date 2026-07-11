@@ -1,156 +1,145 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
-from runtime.core.email_parser import EmailParser
-from runtime.core.email_reader import EmailReader
-from runtime.core.models import Email
-from runtime.core.pdf_converter import PDFProcessor
-from runtime.utils import paper_types
-
+from runtime.core.email_reader import SimpleEmailReader, EmailData
 from runtime.utils.logging_functions import get_logger
+
+from py_impose import PDFProcessor, PaperTypes, BindingType, PageSize
+
 logger = get_logger("PipeLine", "pipeline.log")
 
 
 class Pipeline:
-    """Verbindet EmailReader → EmailParser → PDFProcessor zu einem Ablauf."""
+    """Reads emails -> Extracts Streams -> Sets Binding by Page Count -> Processes directly to SRA3"""
 
-    def __init__(
-        self,
-        credentials_path: str | Path,
-        output_dir: str | Path,
-        tile_to: paper_types.PageSize = paper_types.SRA3,
-    ):
+    def __init__(self, output_dir: str | Path):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.tile_to = tile_to
 
-        self._reader = EmailReader(credentials_path)
-        self._parser = EmailParser()
+        self._reader = SimpleEmailReader()
         self._processed_ids: set[str] = set()
 
-    # ------------------------------------------------------------------ #
-    #  Öffentliche API                                                     #
-    # ------------------------------------------------------------------ #
+    def run(self, limit: int = 200, max_age_days: float = 1.0, user_mail: str = "info@straussdruck.at", folder_name: str = "DRUCKAUFTRÄGE") -> list[EmailData]:
+        logger.info(f"Starting — limit={limit}, max_age_days={max_age_days}, folder={folder_name}")
 
-    def run(
-        self,
-        limit: int = 200,
-        max_age_days: float = 1.0,
-        user_mail: str | None = None,
-    ) -> list[Email]:
-        """Einmaliger Lauf — verarbeitet alle Emails der letzten max_age_days."""
-        logger.info("[Pipeline] Starting — limit=%d, max_age_days=%.1f, user=%s",
-                    limit, max_age_days, user_mail or "all")
-
-        emails = self._reader.get_emails(
+        emails = self._reader.get_attachments_from_mailbox(
+            user_mail=user_mail,
             limit=limit,
             max_age_days=max_age_days,
-            user_mail=user_mail,
+            folder_name=folder_name
         )
-        logger.info("[Pipeline] Fetched %d emails", len(emails))
+
+        logger.info(f"Fetched {len(emails)} emails with attachments")
 
         processed = self._process_new_emails(emails)
 
-        logger.info("[Pipeline] Done — %d/%d emails processed", len(processed), len(emails))
+        logger.info(f"Done — {len(processed)} emails processed")
         return processed
 
     def run_forever(
-        self,
-        initial_max_age_days: float = 1.0,
-        initial_limit: int = 200,
-        poll_window_hours: float = 2.0,
-        poll_limit=20,
-        sleep_seconds: int = 300,
-        user_mail: str | None = None,
+            self,
+            initial_max_age_days: float = 1.0,
+            initial_limit: int = 200,
+            poll_window_hours: float = 2.0,
+            poll_limit: int = 20,
+            sleep_seconds: int = 300,
+            user_mail: str = "info@straussdruck.at",
+            folder_name: str = "DRUCKAUFTRÄGE"
     ) -> None:
-        """Läuft endlos:
-        1. Verarbeitet alle Emails des initialen Zeitfensters.
-        2. Pollt danach alle poll_window_hours auf neue Emails.
-        3. Schläft sleep_seconds wenn keine neuen Emails gefunden wurden.
-        """
-        logger.info(
-            "[Pipeline] Starting continuous mode — poll_window=%.1fh, sleep=%ds",
-            poll_window_hours, sleep_seconds,
-        )
 
-        # Erster Lauf: komplettes initiales Zeitfenster
-        self.run(limit=initial_limit, max_age_days=initial_max_age_days, user_mail=user_mail)
+        logger.info(f"Starting continuous mode — sleep={sleep_seconds}s")
+        self.run(limit=initial_limit, max_age_days=initial_max_age_days, user_mail=user_mail, folder_name=folder_name)
 
         poll_age_days = poll_window_hours / 24.0
 
         while True:
-            logger.info("[Pipeline] Polling for emails from the last %.1f hour(s)...", poll_window_hours)
+            logger.info(f"Polling for emails from the last {poll_window_hours} hour(s)...")
 
             try:
-                emails = self._reader.get_emails(
+                emails = self._reader.get_attachments_from_mailbox(
+                    user_mail=user_mail,
                     limit=poll_limit,
                     max_age_days=poll_age_days,
-                    user_mail=user_mail,
+                    folder_name=folder_name
                 )
 
                 new = self._process_new_emails(emails)
 
                 if new:
-                    logger.info("[Pipeline] Processed %d new email(s)", len(new))
+                    logger.info(f"Processed {len(new)} new email(s)")
                 else:
-                    logger.info("[Pipeline] No new emails — sleeping %d seconds...", sleep_seconds)
                     time.sleep(sleep_seconds)
 
-            except Exception:
-                logger.exception("[Pipeline] Unexpected error during polling — sleeping before retry")
+            except Exception as e:
+                logger.exception(f"Unexpected error during polling: {e}")
                 time.sleep(sleep_seconds)
 
     # ------------------------------------------------------------------ #
-    #  Intern                                                              #
+    #  Internal Processing                                               #
     # ------------------------------------------------------------------ #
 
-    def _process_new_emails(self, emails: list[Email]) -> list[Email]:
-        """Filtert bereits verarbeitete Emails heraus und verarbeitet nur neue."""
+    def _process_new_emails(self, emails: list[EmailData]) -> list[EmailData]:
         processed = []
         for email in emails:
-            if email.id in self._processed_ids:
+            email_id = f"{email.subject}_{email.received.timestamp()}"
+
+            if email_id in self._processed_ids:
                 continue
+
             try:
-                if email.has_attachments:
-                    self._process_email(email)
-                    processed.append(email)
-                # Als gesehen markieren, auch wenn keine Attachments
-                self._processed_ids.add(email.id)
-            except Exception:
-                logger.exception("[Pipeline] Failed to process email '%s'", email.subject)
+                self._process_email(email)
+                processed.append(email)
+                self._processed_ids.add(email_id)
+            except Exception as e:
+                logger.exception(f"Failed to process email '{email.subject}': {e}")
+
         return processed
 
-    def _process_email(self, email: Email) -> None:
-        logger.info("[Pipeline] Processing '%s' from %s", email.subject, email.Kunde.Email)
-
-        # Schritt 1: KI analysiert die Email
-        self._parser.parse(email)
-
-        if not email.Is_Auftrag:
-            logger.info("[Pipeline] Not an order — skipping '%s'", email.subject)
-            return
-
-        if not email.Auftraege:
-            logger.warning("[Pipeline] Marked as order but no Auftraege found in '%s'", email.subject)
-            return
-        
-        logger.info("[Pipeline] Found %d Auftrag(e) in '%s'", len(email.Auftraege), email.subject)
-
+    def _process_email(self, email: EmailData) -> None:
+        logger.info(f"Processing '{email.subject}' from {email.sender}")
         output_dir = self._output_dir_for(email)
-        processors = PDFProcessor.from_email(email, output_dir=output_dir, tile_to=self.tile_to)
 
-        for processor in processors:
-            logger.info("[Pipeline] Processing PDF '%s'", processor.input_path)
-            processor.run()
+        for att in email.attachments:
+            # Define final output path for this specific attachment
+            original_file = output_dir / f"original_{att.name}"
+            original_file.write_bytes(att.content)
+            logger.info(f"[Pipeline] Saved original file: '{original_file.name}'")
 
-        email.mark_as_read()
+            output_file = output_dir / f"imposed_{att.name}"
 
-    def _output_dir_for(self, email: Email) -> Path:
-        """Erstellt einen Unterordner pro Absender."""
-        folder_name = email.Kunde.Organisation or email.Kunde.Name
+            # 1. Initialize PDFProcessor with streams and target format
+            processor = PDFProcessor(
+                input_path=att.stream,
+                output_path=str(output_file),
+                tile_to=PaperTypes.SRA3.value
+            )
+
+            # 2. Load the file first so py-impose parses the document
+            processor.load()
+
+            # 3. Determine binding type based on the actual loaded pages
+            page_amount = len(processor.pages)
+            binding_type = BindingType.NORMAL if page_amount <= 2 else BindingType.FLYER
+
+            logger.info(f"File '{att.name}' ({page_amount} pages) -> Binding: {binding_type.name}")
+
+            # 4. Update imposition configuration dynamically
+            processor.update_value(
+                impose__binding=binding_type,
+                bleed__default_bleed=PageSize.mm_to_points(1),
+                bleed__scaleForBleed=False,
+                tile__inner_spacing=PageSize.mm_to_points(1),
+                tile__outer_margin=PageSize.mm_to_points(1),
+            )
+
+            # 5. Chain the remaining execution (skipping .load() since it's already done, and skipping .resize())
+            logger.info(f"Running py-impose pipeline for '{att.name}'...")
+            processor.impose().bleed().tile().export()
+
+    def _output_dir_for(self, email: EmailData) -> Path:
+        folder_name = email.sender.split('@')[0]
         folder_name = "".join(c for c in folder_name if c.isalnum() or c in " _-").strip()
         path = self.output_dir / folder_name
         path.mkdir(parents=True, exist_ok=True)

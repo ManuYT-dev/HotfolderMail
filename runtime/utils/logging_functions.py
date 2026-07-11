@@ -1,15 +1,18 @@
+import os
 import logging
+from pathlib import Path
 
 
 def get_logger(name: str, log_file: str) -> logging.Logger:
     """Erstellt einen Logger mit eigenem File-Handler."""
-    log_path = globals.PATH_LOGS / log_file
+    base_log_dir = os.getenv("LOG_DIR", "logs")
+    log_path = Path(base_log_dir) / log_file
+
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
 
-    # Verhindert doppelte Handler falls get_logger mehrmals aufgerufen wird
     if logger.handlers:
         return logger
 
@@ -23,6 +26,6 @@ def get_logger(name: str, log_file: str) -> logging.Logger:
 
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
-    logger.propagate = False  # verhindert doppelte Ausgabe durch Root-Logger
+    logger.propagate = False
 
     return logger
