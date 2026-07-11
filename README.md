@@ -28,5 +28,5 @@ An automated email pipeline that fetches print orders from an Azure-hosted Micro
 
 1. **Clone the repository:**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/ManuYT-dev/HotfolderMail.git
    cd HotfolderMail
