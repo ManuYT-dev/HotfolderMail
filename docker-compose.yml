@@ -1,7 +1,9 @@
 services:
-  automatisierung:
+  hotfoldermail:
     build: .
+    env_file:
+      - ..env
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ./data/output:/app/data/output   # processed PDFs land here on your host
+      - ./logs:/app/logs                 # logs visible on your host
     restart: unless-stopped
