@@ -2,7 +2,7 @@ services:
   hotfoldermail:
     build: .
     env_file:
-      - ..env
+      - .env
     volumes:
       - ./data/output:/app/data/output   # processed PDFs land here on your host
       - ./logs:/app/logs                 # logs visible on your host

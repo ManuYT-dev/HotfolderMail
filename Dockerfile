@@ -19,7 +19,7 @@ COPY . .
 # Create output and log directories
 RUN mkdir -p data/output logs
 
-# Azure credentials — override these at runtime via docker run -e or ..env file
+# Azure credentials — override these at runtime via docker run -e or .env file
 ENV AZURE_CLIENT_ID=""
 ENV AZURE_CLIENT_SECRET=""
 ENV AZURE_TENANT_ID=""
