@@ -17,14 +17,22 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY . .
 
-# Create output and log directories
-RUN mkdir -p data/output logs
+# Create log directory (output no longer lands on local disk — it goes
+# straight to the SMB share, so no local output dir is needed)
+RUN mkdir -p logs
 
 # Azure credentials — override these at runtime via docker run -e or .env file
 ENV AZURE_CLIENT_ID=""
 ENV AZURE_CLIENT_SECRET=""
 ENV AZURE_TENANT_ID=""
 ENV LOG_DIR="logs"
-ENV OUTPUT_DIR="data/output"
+
+# SMB share credentials — override these at runtime via docker run -e or .env file
+ENV SMB_SERVER=""
+ENV SMB_SHARE=""
+ENV SMB_USER=""
+ENV SMB_PASSWORD=""
+# Main folder INSIDE the SMB share where all customer subfolders get created
+ENV OUTPUT_DIR="Auftraege"
 
 CMD ["python", "main.py"]
