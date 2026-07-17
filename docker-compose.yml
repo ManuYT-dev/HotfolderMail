@@ -4,6 +4,5 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/output:/app/data/output   # processed PDFs land here on your host
       - ./logs:/app/logs                 # logs visible on your host
     restart: unless-stopped
