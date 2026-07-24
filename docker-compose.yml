@@ -5,5 +5,5 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs                 # logs visible on your host
-      - /mnt/daten:/mnt/daten
+      - C:/Users/Manuel/Documents/Auftrag:/mnt/daten
     restart: unless-stopped

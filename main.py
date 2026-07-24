@@ -50,9 +50,9 @@ def main():
         # ---------------------------------------------------------
         logger.info("Starting continuous polling mode...")
         pipeline.run_forever(
-            initial_max_age_days=100.0,  # Fetch the last 100 days on the very first run
+            initial_max_age_days=300.0,  # Fetch the last 100 days on the very first run
             initial_limit=100,  # Max emails on startup
-            poll_window_hours=72.0,  # Look back 72 hours on every subsequent poll
+            poll_window_hours=120.0,  # Look back 120 hours on every subsequent poll
             poll_limit=20,  # Max emails per poll
             sleep_seconds=300,  # Wait 5 minutes (300s) between checks
             user_mail="info@straussdruck.at",

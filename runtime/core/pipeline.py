@@ -82,6 +82,16 @@ class Pipeline:
                     logger.info(f"Processed {len(new)} new email(s)")
                 else:
                     time.sleep(sleep_seconds)
+            except IndexError:
+                # CATCH THE BUG: O365 library throws IndexError when app-only token auto-refresh fails
+                logger.warning("O365 token expired and auto-refresh failed. Re-authenticating from scratch...")
+                try:
+                    # Throw away the broken reader and create a fresh one with a new token
+                    self._reader = SimpleEmailReader()
+                    logger.info("Successfully re-authenticated. Resuming normal operations...")
+                except Exception as auth_err:
+                    logger.error(f"Failed to re-authenticate: {auth_err}")
+                    time.sleep(sleep_seconds)
             except Exception as e:
                 logger.exception(f"Unexpected error during polling: {e}")
                 time.sleep(sleep_seconds)
@@ -158,8 +168,9 @@ class Pipeline:
             impose__binding=binding_type,
             bleed__default_bleed=PageSize.mm_to_points(1),
             bleed__scaleForBleed=False,
-            tile__inner_spacing=PageSize.mm_to_points(1),
+            tile__inner_spacing=PageSize.mm_to_points(3),
             tile__outer_margin=PageSize.mm_to_points(1),
+            tile__line_thickness=PageSize.mm_to_points(0.2)
         )
 
         logger.info(f"Running py-impose pipeline for '{att.name}'...")
