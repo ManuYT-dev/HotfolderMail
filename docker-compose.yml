@@ -4,6 +4,6 @@ services:
     env_file:
       - .env
     volumes:
-      - ./logs:/app/logs                 # logs visible on your host
-      - C:/Users/Manuel/Documents/Auftrag:/mnt/daten
+      - ./logs:/app/logs
+      - ${HOST_AUFTRAG_PATH}:/app/daten
     restart: unless-stopped
