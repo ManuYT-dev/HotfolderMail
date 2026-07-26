@@ -169,7 +169,7 @@ class Pipeline:
             bleed__default_bleed=PageSize.mm_to_points(1),
             bleed__scaleForBleed=False,
             tile__inner_spacing=PageSize.mm_to_points(3),
-            tile__outer_margin=PageSize.mm_to_points(1),
+            tile__outer_margin=PageSize.mm_to_points(8),
             tile__line_thickness=PageSize.mm_to_points(0.2)
         )
 
