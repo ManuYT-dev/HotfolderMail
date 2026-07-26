@@ -5,5 +5,5 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
-      - ${HOST_AUFTRAG_PATH}:/app/daten
+      - ${HOST_AUFTRAG_PATH}:${OUTPUT_DIR}
     restart: unless-stopped
