@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 import re
 import time
 from datetime import datetime
@@ -32,6 +31,12 @@ class Pipeline:
     - If a file with the exact same bytes already exists, the upload is skipped entirely.
     - If a file has the same name for today but different content, a random 4-digit 
       suffix is appended to prevent overwriting existing data.
+
+    Read-Tracking:
+    - Only unread emails are fetched by default (see SimpleEmailReader.unread_only).
+    - An email is marked as read only after ALL of its attachments have been
+      processed without raising — so a partial failure leaves it unread and it will
+      be retried on the next poll.
     """
 
     def __init__(self, output_dir: str | Path):
@@ -106,8 +111,14 @@ class Pipeline:
                 self._process_email(email)
                 processed.append(email)
                 self._processed_ids.add(email_id)
+
+                if self._reader.mark_as_read(email):
+                    logger.info(f"Marked '{email.subject}' as read")
+                else:
+                    logger.warning(f"Could not mark '{email.subject}' as read")
             except Exception as e:
                 logger.exception(f"Failed to process email '{email.subject}': {e}")
+                # Left unread on purpose — will be retried on the next poll.
         return processed
 
     def _process_email(self, email: EmailData) -> None:
@@ -135,15 +146,15 @@ class Pipeline:
                 logger.exception(f"Could not read '{name}' for duplicate check")
 
         date_prefix = datetime.now().strftime("%d%m%Y")
+        stem = PurePosixPath(att.name).stem
         original_name = f"{date_prefix}_original_{att.name}"
-        imposed_name = f"{date_prefix}_imposed_{att.name}"
+        imposed_name = f"{date_prefix}_imposed_{stem}.pdf"
 
         if original_name in existing_names or imposed_name in existing_names:
-            stem = PurePosixPath(att.name).stem
-            suffix = PurePosixPath(att.name).suffix
             rand = random.randint(1000, 9999)
+            suffix = PurePosixPath(att.name).suffix
             original_name = f"{date_prefix}_original_{stem}_{rand}{suffix}"
-            imposed_name = f"{date_prefix}_imposed_{stem}_{rand}{suffix}"
+            imposed_name = f"{date_prefix}_imposed_{stem}_{rand}.pdf"
             logger.info(f"'{att.name}' would overwrite — using '{original_name}' / '{imposed_name}'")
 
         original_path = output_dir / original_name

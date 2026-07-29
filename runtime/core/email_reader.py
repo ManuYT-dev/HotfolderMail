@@ -4,7 +4,8 @@ import base64
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 from O365 import Account
 
 
@@ -23,6 +24,7 @@ class EmailData:
     sender: str
     received: datetime
     attachments: list[AttachmentData]
+    message: Any = field(default=None, repr=False, compare=False)  # underlying O365 Message
 
 
 class SimpleEmailReader:
@@ -48,11 +50,16 @@ class SimpleEmailReader:
             user_mail: str,
             folder_name: str = "DRUCKAUFTRÄGE",
             limit: int = 50,
-            max_age_days: float = 1.0
+            max_age_days: float = 1.0,
+            unread_only: bool = True,
     ) -> list[EmailData]:
         """
         Logs into a user's mailbox, fetches emails within the max age, and extracts
         attachments along with their byte content and streams.
+
+        unread_only: if True, only fetches messages where isRead == False. This cuts
+        down drastically on re-processing already-handled mail, on top of the
+        processed-id tracking done in Pipeline.
         """
         mailbox = self._account.mailbox(resource=user_mail)
 
@@ -66,7 +73,11 @@ class SimpleEmailReader:
 
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=max_age_days)
 
-        messages = folder.get_messages(limit=limit, order_by="receivedDateTime desc")
+        query = None
+        if unread_only:
+            query = folder.new_query().equals("isRead", False)
+
+        messages = folder.get_messages(limit=limit, query=query, order_by="receivedDateTime desc")
         processed_emails = []
 
         for msg in messages:
@@ -105,11 +116,23 @@ class SimpleEmailReader:
                         subject=msg.subject,
                         sender=msg.sender.address,
                         received=msg.received,
-                        attachments=parsed_attachments
+                        attachments=parsed_attachments,
+                        message=msg,
                     )
                 )
 
         return processed_emails
+
+    @staticmethod
+    def mark_as_read(email: EmailData) -> bool:
+        """Marks the underlying O365 message as read. Returns True on success."""
+        if email.message is None:
+            return False
+        try:
+            email.message.mark_as_read()
+            return True
+        except Exception:
+            return False
 
 
 if __name__ == "__main__":
